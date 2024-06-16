@@ -7,7 +7,6 @@ import { redisInstance } from "./PubSubManager";
 const app = express();
 app.use(express.json({ limit: "30mb" }));
 const httpServer = http.createServer(app);
-const wss = new WebSocketServer({ server: httpServer });
 
 // API endpoint to create a new WebSocket server
 app.post("/servers", async (req: Request, res: Response) => {
@@ -65,42 +64,6 @@ app.get("/servers", async (req: Request, res: Response) => {
     console.error(error);
     return res.status(500).json({ error: "Internal server error." });
   }
-});
-
-// WebSocket connection handler
-wss.on("connection", async (ws: WebSocket, req: Request) => {
-  const params = new URLSearchParams(req.url.split("?")[1]);
-  const serverId = params.get("serverId");
-  if (!serverId) {
-    ws.send(JSON.stringify({ message: "Please add serverId to the connection url" }));
-    ws.close();
-    return;
-  }
-
-  const id = uuidv4();
-  redisInstance.setWebSockClientMap(id, ws)
-  await redisInstance.subscribeToChannel(serverId, id);
-  console.log('sub to channel')
-  const serverInfo = await redisInstance.getWebSocketServer(serverId);
-  if(!serverInfo){
-    ws.send(JSON.stringify({ message: 'Server not found.'}))
-  }
-
-  ws.on("message", async (message: string) => {
-    try {
-      const data = JSON.parse(message);
-      const serverMsg = data.message;
-      await redisInstance.publishToChannel(serverId, id, serverMsg);
-    } catch (error) {
-      console.error("Error processing WebSocket message:", error);
-    }
-  });
-
-  ws.on("close", async () => {
-    await redisInstance.unSubscribeFromChannel(serverId, id)
-  });
-
-  ws.send(JSON.stringify({ message: `Welcome! to ${serverInfo?.name}`, id }));
 });
 
 httpServer.listen(3000, () => {
